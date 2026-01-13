@@ -306,7 +306,7 @@
         }
         
         .background {
-            top: 20%;
+            top: 380px;
         }
         
         @media (max-width: 768px) {
@@ -318,9 +318,9 @@
         }
         
         @media (max-width: 480px) {
-            .background {margin-top: -50px;}
+            .background {top: 180px;}
             .logo {
-                margin-top: -90px;
+                margin-top: -110px;
             }
             .background img {
                 max-width: 350px;
@@ -431,11 +431,102 @@
             z-index: -2; /* 新增：设为最低层 */
         }
         
-        .image-window img {
+        /* 原始图片（仅用于加载动画） */
+        .image-window .original-img {
             width: 100%;
             height: auto;
             display: block;
             object-fit: contain;
+            opacity: 0; /* 隐藏原图，只显示teleprompter */
+            position: absolute;
+            z-index: -1;
+        }
+        
+        /* ===== TELEPROMPTER 滚动样式 ===== */
+        .teleprompter-wrapper {
+            position: relative;
+            width: 430px;
+            height: 500px;
+            overflow: hidden;
+            border-radius: 10px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);
+            background: #000;
+            touch-action: none; /* 禁用浏览器默认触摸行为 */
+            cursor: grab;
+            margin: 0 auto;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+        
+        .teleprompter-wrapper.loaded {
+            opacity: 1;
+        }
+        
+        .teleprompter-wrapper:active {
+            cursor: grabbing;
+        }
+        
+        .teleprompter-inner {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            will-change: transform; /* 性能优化 */
+            transition: transform 0.1s linear;
+        }
+        
+        .teleprompter-img-container {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .teleprompter-img-container img {
+            width: 100%;
+            height: auto;
+            display: block;
+            pointer-events: none;
+            user-select: none;
+        }
+        
+        /* 进度条容器 - 复用播放器样式 */
+        .teleprompter-progress {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: linear-gradient(to top, rgba(15, 32, 39, 0.9), transparent);
+            padding: 10px 15px;
+            z-index: 10;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .teleprompter-wrapper:hover .teleprompter-progress {
+            opacity: 1;
+        }
+        
+        .teleprompter-progress .time-display {
+            margin-bottom: 0;
+            justify-content: center;
+        }
+        
+        .teleprompter-progress .progress-bar {
+            margin-top: 5px;
+            height: 4px;
+            background: rgba(255, 215, 0, 0.3);
+            border-radius: 2px;
+        }
+        
+        .teleprompter-progress .progress {
+            height: 100%;
+            background: linear-gradient(90deg, #ffd700, #ff4500);
+            border-radius: 2px;
+        }
+        
+        /* 边界阻尼效果 */
+        .teleprompter-wrapper.boundary-top .teleprompter-inner,
+        .teleprompter-wrapper.boundary-bottom .teleprompter-inner {
+            transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
         }
         
         /* 确保两张图片之间无缝 */
@@ -461,12 +552,22 @@
                 width: 100vw;
                 margin-left: calc(-50vw + 50%);
             }
+            
+            .teleprompter-wrapper {
+                width: 90vw;
+                max-width: 430px;
+                height: 500px;
+            }
         }
         
         /* 桌面端图片最大宽度限制 */
         @media (min-width: 769px) {
             .image-window img {
                 max-width: 580px;
+            }
+            
+            .teleprompter-wrapper {
+                max-width: 430px;
             }
         }
     </style>
@@ -528,11 +629,31 @@
             <img src="MyCardEnglish.png" alt="CMG Logo">
         </div>
         
-        <!-- 图片窗口容器 - 包含三张垂直排列的图片 -->
+        <!-- 图片窗口容器 - 包含teleprompter滚动效果 -->
         <div class="image-window">
-            <img src="cmgapmap.jpg" alt="展示图片1">
-            <img src="DSC02527.JPG" alt="展示图片2">
-            <img src="LSW02216.JPG" alt="展示图片3">
+            <!-- 原始图片（仅用于加载动画） -->
+            <img src="Socialmap003.jpg" alt="展示图片1" class="original-img">
+            
+            <!-- Teleprompter滚动容器 -->
+            <div class="teleprompter-wrapper loading">
+                <div class="teleprompter-inner">
+                    <div class="teleprompter-img-container">
+                        <!-- 两张相同图片实现无缝循环 -->
+                        <img src="Socialmap003.jpg" alt="展示图片1">
+                        <img src="Socialmap003.jpg" alt="展示图片1">
+                    </div>
+                </div>
+                
+                <!-- 进度条（复用播放器样式） -->
+                <div class="teleprompter-progress">
+                    <div class="time-display">
+                        <span class="progress-text">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress"></div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -615,6 +736,385 @@
             }
         });
         
+        // ===== TELEPROMPTER 滚动控制器 =====
+        class TeleprompterScroller {
+            constructor(wrapper, options = {}) {
+                this.wrapper = wrapper;
+                this.inner = wrapper.querySelector('.teleprompter-inner');
+                this.imgContainer = wrapper.querySelector('.teleprompter-img-container');
+                this.progressBar = wrapper.querySelector('.progress-bar');
+                this.progress = wrapper.querySelector('.progress');
+                this.progressText = wrapper.querySelector('.progress-text');
+                
+                // ===== 可调节参数（请在此修改） =====
+                this.options = {
+                    totalSeconds: 60,          // 总滚动时间（秒）- 修改此处调整速度
+                    dragDamping: 0.15,         // 拖动阻尼系数（0-1，越小阻尼越大）
+                    doubleClickDelay: 300,     // 双击识别间隔（ms）
+                    autoPlay: true,            // 初始自动播放
+                    ...options
+                };
+                // ===== 可调节参数结束 =====
+                
+                this.imgs = this.imgContainer.querySelectorAll('img');
+                this.isPlaying = this.options.autoPlay;
+                this.isDragging = false;
+                this.isTouching = false;
+                
+                // 滚动状态
+                this.currentY = 0;
+                this.targetY = 0;
+                this.velocity = 0;
+                this.animationId = null;
+                this.lastTime = null;
+                
+                // 触摸/鼠标状态
+                this.startY = 0;
+                this.startTranslateY = 0;
+                this.lastY = 0;
+                this.lastTimestamp = 0;
+                
+                // 双击检测
+                this.clickCount = 0;
+                this.clickTimer = null;
+                
+                // 初始化
+                this.init();
+            }
+            
+            async init() {
+                // 等待图片加载
+                await this.waitForImages();
+                
+                // 计算尺寸
+                this.containerHeight = this.wrapper.clientHeight;
+                this.imgHeight = this.imgs[0].clientHeight;
+                
+                // 验证图片高度（基于您提供的6609.25px）
+                console.log('图片高度:', this.imgHeight, 'px');
+                console.log('容器高度:', this.containerHeight, 'px');
+                
+                // 计算滚动参数
+                this.maxScroll = this.imgHeight - this.containerHeight;
+                this.scrollSpeed = this.maxScroll / this.options.totalSeconds; // 像素/秒
+                
+                console.log('最大滚动距离:', this.maxScroll, 'px');
+                console.log('滚动速度:', this.scrollSpeed.toFixed(2), '像素/秒');
+                
+                // 设置初始位置（顶部对齐）
+                this.currentY = 0;
+                this.targetY = 0;
+                this.updateTransform();
+                
+                // 绑定事件
+                this.bindEvents();
+                
+                // 移除loading状态，显示容器
+                this.wrapper.classList.remove('loading');
+                this.wrapper.classList.add('loaded');
+                
+                // 开始动画循环
+                this.animate();
+            }
+            
+            waitForImages() {
+                return Promise.all(
+                    Array.from(this.imgs).map(img => 
+                        img.complete ? Promise.resolve() : new Promise(resolve => {
+                            img.onload = resolve;
+                            img.onerror = resolve;
+                        })
+                    )
+                );
+            }
+            
+            bindEvents() {
+                // 触摸事件
+                this.wrapper.addEventListener('touchstart', this.handleTouchStart.bind(this));
+                this.wrapper.addEventListener('touchmove', this.handleTouchMove.bind(this));
+                this.wrapper.addEventListener('touchend', this.handleTouchEnd.bind(this));
+                
+                // 鼠标事件
+                this.wrapper.addEventListener('mousedown', this.handleMouseDown.bind(this));
+                this.wrapper.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
+                
+                // 单击/双击处理
+                this.wrapper.addEventListener('click', this.handleClick.bind(this));
+                
+                // 进度条点击
+                const progressBar = this.wrapper.querySelector('.progress-bar');
+                progressBar.addEventListener('click', this.handleProgressClick.bind(this));
+                
+                // 防止默认拖动行为
+                this.wrapper.addEventListener('dragstart', e => e.preventDefault());
+                
+                // 窗口resize时重新计算
+                window.addEventListener('resize', this.handleResize.bind(this));
+            }
+            
+            // 主动画循环
+            animate(timestamp) {
+                if (!this.lastTime) this.lastTime = timestamp;
+                
+                const deltaTime = (timestamp - this.lastTime) / 1000; // 转换为秒
+                this.lastTime = timestamp;
+                
+                if (this.isPlaying && !this.isDragging && !this.isTouching) {
+                    // 自动滚动
+                    this.targetY -= this.scrollSpeed * deltaTime;
+                    
+                    // 无缝循环检测（两张图片拼接）
+                    if (this.targetY <= -this.imgHeight) {
+                        this.targetY += this.imgHeight;
+                        this.currentY += this.imgHeight;
+                    }
+                }
+                
+                // 平滑过渡到目标位置
+                if (!this.isDragging && !this.isTouching) {
+                    const diff = this.targetY - this.currentY;
+                    this.velocity = diff * 0.1; // 平滑系数
+                    this.currentY += this.velocity;
+                    
+                    // 限制边界（带阻尼）
+                    if (this.currentY > 0) {
+                        this.currentY *= 0.7; // 顶部阻尼
+                        this.targetY = this.currentY;
+                    } else if (this.currentY < -this.maxScroll) {
+                        const overshoot = this.currentY + this.maxScroll;
+                        this.currentY = -this.maxScroll + overshoot * 0.7; // 底部阻尼
+                        this.targetY = this.currentY;
+                    }
+                }
+                
+                // 更新位置
+                this.updateTransform();
+                this.updateProgress();
+                
+                // 继续动画循环
+                this.animationId = requestAnimationFrame((ts) => this.animate(ts));
+            }
+            
+            updateTransform() {
+                // 应用当前滚动位置
+                this.inner.style.transform = `translateY(${this.currentY}px)`;
+            }
+            
+            updateProgress() {
+                // 计算当前进度（基于单张图片）
+                const progressInSingleImage = (-this.currentY % this.imgHeight) / this.maxScroll;
+                let percent = Math.min(100, Math.max(0, progressInSingleImage * 100));
+                
+                // 处理边界情况
+                if (this.maxScroll <= 0) percent = 0;
+                
+                this.progress.style.width = `${percent}%`;
+                this.progressText.textContent = `${Math.round(percent)}%`;
+            }
+            
+            // ===== 事件处理函数 =====
+            handleTouchStart(e) {
+                if (e.touches.length !== 1) return;
+                
+                this.isTouching = true;
+                this.isPlaying = false; // 触摸时暂停自动滚动
+                
+                const touch = e.touches[0];
+                this.startY = touch.clientY;
+                this.startTranslateY = this.currentY;
+                this.lastY = touch.clientY;
+                this.lastTimestamp = e.timeStamp;
+                this.velocity = 0;
+                
+                e.preventDefault();
+            }
+            
+            handleTouchMove(e) {
+                if (!this.isTouching || e.touches.length !== 1) return;
+                
+                const touch = e.touches[0];
+                const deltaY = touch.clientY - this.lastY;
+                const deltaTime = e.timeStamp - this.lastTimestamp;
+                
+                // 计算速度（用于惯性滚动）
+                if (deltaTime > 0) {
+                    this.velocity = deltaY / deltaTime;
+                }
+                
+                // 更新位置
+                this.lastY = touch.clientY;
+                this.lastTimestamp = e.timeStamp;
+                
+                // 应用拖动（带阻尼）
+                const newY = this.currentY + deltaY * this.options.dragDamping;
+                
+                // 边界限制（iOS阻尼效果）
+                if (newY > 0) {
+                    this.currentY = newY * 0.3; // 顶部强阻尼
+                } else if (newY < -this.maxScroll) {
+                    const overshoot = newY + this.maxScroll;
+                    this.currentY = -this.maxScroll + overshoot * 0.3; // 底部强阻尼
+                } else {
+                    this.currentY = newY;
+                }
+                
+                this.targetY = this.currentY; // 同步目标位置
+                this.updateTransform();
+                
+                e.preventDefault();
+            }
+            
+            handleTouchEnd(e) {
+                if (!this.isTouching) return;
+                
+                this.isTouching = false;
+                
+                // 应用惯性滚动
+                if (Math.abs(this.velocity) > 0.1) {
+                    this.targetY = this.currentY + this.velocity * 100; // 惯性系数
+                }
+                
+                // 限制边界
+                this.targetY = Math.max(-this.maxScroll, Math.min(0, this.targetY));
+                
+                e.preventDefault();
+            }
+            
+            handleMouseDown(e) {
+                if (e.button !== 0) return; // 只响应左键
+                
+                this.isDragging = true;
+                this.isPlaying = false; // 拖动时暂停自动滚动
+                
+                this.startY = e.clientY;
+                this.startTranslateY = this.currentY;
+                this.lastY = e.clientY;
+                this.lastTimestamp = e.timeStamp;
+                this.velocity = 0;
+                
+                // 绑定全局鼠标事件
+                const mouseMove = this.handleMouseMove.bind(this);
+                const mouseUp = this.handleMouseUp.bind(this);
+                
+                document.addEventListener('mousemove', mouseMove);
+                document.addEventListener('mouseup', function upHandler(e) {
+                    mouseUp(e);
+                    document.removeEventListener('mousemove', mouseMove);
+                    document.removeEventListener('mouseup', upHandler);
+                });
+                
+                e.preventDefault();
+            }
+            
+            handleMouseMove(e) {
+                if (!this.isDragging) return;
+                
+                const deltaY = e.clientY - this.lastY;
+                const deltaTime = e.timeStamp - this.lastTimestamp;
+                
+                if (deltaTime > 0) {
+                    this.velocity = deltaY / deltaTime;
+                }
+                
+                this.lastY = e.clientY;
+                this.lastTimestamp = e.timeStamp;
+                
+                const newY = this.currentY + deltaY * this.options.dragDamping;
+                
+                // 边界限制（与触摸相同）
+                if (newY > 0) {
+                    this.currentY = newY * 0.3;
+                } else if (newY < -this.maxScroll) {
+                    const overshoot = newY + this.maxScroll;
+                    this.currentY = -this.maxScroll + overshoot * 0.3;
+                } else {
+                    this.currentY = newY;
+                }
+                
+                this.targetY = this.currentY;
+                this.updateTransform();
+            }
+            
+            handleMouseUp(e) {
+                if (!this.isDragging) return;
+                
+                this.isDragging = false;
+                
+                if (Math.abs(this.velocity) > 0.1) {
+                    this.targetY = this.currentY + this.velocity * 100;
+                }
+                
+                this.targetY = Math.max(-this.maxScroll, Math.min(0, this.targetY));
+            }
+            
+            handleWheel(e) {
+                if (Math.abs(e.deltaY) < 1) return;
+                
+                this.isPlaying = false; // 滚轮操作时暂停
+                
+                const wheelDelta = e.deltaY * 0.5; // 滚轮灵敏度
+                this.targetY += wheelDelta;
+                this.targetY = Math.max(-this.maxScroll, Math.min(0, this.targetY));
+                
+                e.preventDefault();
+            }
+            
+            handleClick(e) {
+                // 检查是否点击在进度条上
+                if (e.target.closest('.progress-bar')) return;
+                
+                this.clickCount++;
+                
+                if (this.clickCount === 1) {
+                    this.clickTimer = setTimeout(() => {
+                        // 单击：切换播放/暂停
+                        this.isPlaying = !this.isPlaying;
+                        this.clickCount = 0;
+                    }, this.options.doubleClickDelay);
+                } else if (this.clickCount === 2) {
+                    // 双击：恢复自动滚动
+                    clearTimeout(this.clickTimer);
+                    this.isPlaying = true;
+                    this.clickCount = 0;
+                }
+            }
+            
+            handleProgressClick(e) {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const percent = clickX / rect.width;
+                
+                this.targetY = -this.maxScroll * percent;
+                this.targetY = Math.max(-this.maxScroll, Math.min(0, this.targetY));
+                this.isPlaying = true; // 跳转后自动播放
+            }
+            
+            handleResize() {
+                // 重新计算尺寸
+                this.containerHeight = this.wrapper.clientHeight;
+                this.imgHeight = this.imgs[0].clientHeight;
+                this.maxScroll = this.imgHeight - this.containerHeight;
+                this.scrollSpeed = this.maxScroll / this.options.totalSeconds;
+                
+                // 限制当前位置在有效范围内
+                this.currentY = Math.max(-this.maxScroll, Math.min(0, this.currentY));
+                this.targetY = Math.max(-this.maxScroll, Math.min(0, this.targetY));
+                
+                this.updateTransform();
+            }
+            
+            // 公共方法
+            play() { this.isPlaying = true; }
+            pause() { this.isPlaying = false; }
+            toggle() { this.isPlaying = !this.isPlaying; }
+            
+            destroy() {
+                if (this.animationId) {
+                    cancelAnimationFrame(this.animationId);
+                }
+            }
+        }
+        
         // ===== 原有的页面交互功能 =====
         document.querySelector('.year-3d').addEventListener('mousemove', function(e) {
             const xAxis = (window.innerWidth / 2 - e.pageX) / 25;
@@ -671,18 +1171,23 @@
                 }, 500);
             }
             
-            // 三张图片窗口的加载动画
-            const windowImages = document.querySelectorAll('.image-window img');
-            windowImages.forEach((img, index) => {
-                img.style.opacity = '0';
-                img.style.transform = 'translateY(30px)';
-                
-                setTimeout(() => {
-                    img.style.transition = 'opacity 1s ease, transform 1s ease';
-                    img.style.opacity = '1';
-                    img.style.transform = 'translateY(0)';
-                }, 1500 + (index * 200)); // 第一张延迟1.5秒，后续每张延迟0.2秒
-            });
+            // 初始化teleprompter滚动效果（延迟启动，等待页面动画）
+            setTimeout(() => {
+                const teleprompterWrapper = document.querySelector('.teleprompter-wrapper');
+                if (teleprompterWrapper) {
+                    // ===== 在此修改滚动参数 =====
+                    const teleprompter = new TeleprompterScroller(teleprompterWrapper, {
+                        totalSeconds: 60,      // 修改这里调整滚动速度（秒）
+                        dragDamping: 0.15,     // 拖动阻尼系数
+                        doubleClickDelay: 300, // 双击识别间隔
+                        autoPlay: true         // 自动开始滚动
+                    });
+                    // ===== 参数修改结束 =====
+                    
+                    // 保存实例以便调试
+                    window.teleprompter = teleprompter;
+                }
+            }, 2000); // 延迟2秒开始滚动，等待页面动画完成
             
             // 初始化媒体播放器
             updateProgress();
